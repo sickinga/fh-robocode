@@ -1,86 +1,198 @@
 package at.fhooe.ai.robocode.seidlsickinger;
 
-import at.fhooe.ai.robocode.seidlsickinger.Model.Position;
+import at.fhooe.ai.robocode.seidlsickinger.Model.Target;
 import robocode.*;
+import robocode.util.Utils;
 
+import java.awt.*;
+import java.awt.geom.Point2D;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 public class MyFirstRobot extends AdvancedRobot {
-    private HashMap<String,ScannedRobot> _robotList = new HashMap<String, ScannedRobot>();
 
-    private RobotStatus robotStatus = null;
+    final static double BULLET_POWER = 3;
 
-    int i =0;
+    Map<String, Target> targets = new HashMap<>();
+    List<Target> sortedTargets = new ArrayList<>();
 
     public void run() {
-        setAdjustGunForRobotTurn(true);
         setAdjustRadarForGunTurn(true);
-        setTurnRadarRight(0);
-        setTurnGunRight(0);
+        setTurnRadarRight(Double.POSITIVE_INFINITY);
+
         while (true) {
-            /*turnRadarRight(15);
-            turnGunRight(15);
-            ahead(100);
-            turnRight(15);
-            turnGunRight(15);
-            turnRadarRight(15);
-            back(100);*/
-            turnGunRight(10);
-            turnRadarRight(10);
-            i++;
-            if(i == 10){
-                PrintRobots();
-                i=0;
+            Target target = null;
+
+            if (targets.size() > 1) {
+                sortedTargets = sortTargetsByDistance();
+                if (!sortedTargets.isEmpty()) {
+                    target = sortedTargets.getFirst();
+                }
+            } else if (sortedTargets.isEmpty() && !targets.isEmpty()) {
+                target = targets.values().stream().findFirst().orElse(null);
             }
+
+            if (target != null) {
+                double distanceToNextWall = Math.min(
+                        Math.min(getX(), getBattleFieldWidth() - getX()),
+                        Math.min(getY(), getBattleFieldHeight() - getY())
+                );
+
+                if (distanceToNextWall < 100 && distanceToNextWall < target.distance) {
+                    double angleToCenter = Math.atan2(getBattleFieldWidth() / 2 - getX(), getBattleFieldHeight() / 2 - getY());
+
+                    setTurnRightRadians(Utils.normalRelativeAngle(angleToCenter - getHeadingRadians()));
+                    setAhead(100);
+                } else {
+                    double absBearing = Math.atan2(target.position.x - getX(), target.position.y - getY());
+                    double turnRadius = absBearing + Math.PI / 2;
+
+                    turnRadius -= Math.max(0.5, (1 / target.distance) * 100);
+
+                    if (target.distance < 50) {
+                        double angleToTarget = absBearing - getGunHeadingRadians();
+
+                        setTurnGunRightRadians(Utils.normalRelativeAngle(angleToTarget));
+
+                        setFireBullet(BULLET_POWER);
+                        System.out.println("Shot!");
+                    }
+
+                    setTurnRightRadians(Utils.normalRelativeAngle(turnRadius - getHeadingRadians()));
+                    setMaxVelocity(400 / getTurnRemaining());
+                    setAhead(100);
+                }
+            } else {
+                System.out.println("Idling");
+                setTurnRight(90);
+                setAhead(100);
+            }
+            execute();
         }
     }
-    private void PrintRobots(){
-        System.out.println("Printing robots...");
-        for(int i=0;i<_robotList.size();i++){
-            System.out.println(_robotList.get(i));
+
+    public void onScannedRobot(ScannedRobotEvent e) {
+        double absBearing = getHeadingRadians() + e.getBearingRadians();
+        double distance = e.getDistance();
+
+        if (e.getEnergy() == 0) {
+            targets.remove(e.getName());
+            return;
         }
-        System.out.println("Done printing robots...");
+
+        targets.put(e.getName(), new Target(
+                e.getName(),
+                new Point2D.Double(
+                        getX() + Math.sin(absBearing) * distance,
+                        getY() + Math.cos(absBearing) * distance
+                ),
+                e.getHeadingRadians(),
+                getTime(),
+                e.getEnergy(),
+                distance,
+                e.getVelocity()
+        ));
     }
 
-    public void onScannedRobot(robocode.ScannedRobotEvent e) {
-        double angleToEnemy = e.getBearing();
-
-        // Calculate the angle to the scanned robot
-        double angle = Math.toRadians((robotStatus.getHeading() + angleToEnemy % 360));
-
-        // Calculate the coordinates of the robot
-        double enemyX = (robotStatus.getX() + Math.sin(angle) * e.getDistance());
-        double enemyY = (robotStatus.getY() + Math.cos(angle) * e.getDistance());
-        System.out.println(String.format("%s at position (%f|%f) detected", e.getName(),enemyX,enemyY));
-        if(_robotList.containsKey(e.getName()) == false){
-            _robotList.put(e.getName(),new ScannedRobot(e.getName()));
-        }
-        _robotList.get(e.getName()).AddPosition(new Position(enemyX,enemyY));
-    }
-
-    public void onHitByBullet(robocode.HitByBulletEvent e) {
+    public void onHitByBullet(HitByBulletEvent e) {
         back(100);
     }
 
-    public void onHitWall(robocode.HitWallEvent e) {
-        back(100);
+    public void onHitWall(HitWallEvent e) {
+        if (e.getBearing() > -90 && e.getBearing() < 90) {
+            back(100);
+        } else {
+            ahead(100);
+        }
     }
 
-    public void onHitRobot(robocode.HitRobotEvent e) {
-        back(100);
+    public void onHitRobot(HitRobotEvent e) {
+        if (e.getBearing() > -90 && e.getBearing() < 90) {
+            back(100);
+        } else {
+            ahead(100);
+        }
     }
 
     @Override
-    public void onStatus(StatusEvent e) {
-        super.onStatus(e);
-        robotStatus = e.getStatus();
+    public void onPaint(Graphics2D g) {
+        super.onPaint(g);
+        g.setColor(Color.GREEN);
+        g.drawLine(
+                (int) getX(),
+                (int) getY(),
+                (int) (getX() + Math.sin(getHeadingRadians()) * 100),
+                (int) (getY() + Math.cos(getHeadingRadians()) * 100)
+        );
+        g.setColor(Color.RED);
+        g.drawLine(
+                (int) getX(),
+                (int) getY(),
+                (int) (getX() + Math.sin(getGunHeadingRadians()) * 100),
+                (int) (getY() + Math.cos(getGunHeadingRadians()) * 100)
+        );
+        for (Target target : targets.values()) {
+            g.setColor(Color.BLUE);
+            Point2D.Double position = target.position;
+            double heading = target.heading;
+            double r = (getTime() - target.time) * 3;
+
+            g.drawOval((int) (position.x - r), (int) (position.y - r), (int) (2 * r), (int) (2 * r));
+            g.drawLine(
+                    (int) position.x,
+                    (int) position.y,
+                    (int) (position.x + Math.sin(heading) * r),
+                    (int) (position.y + Math.cos(heading) * r)
+            );
+        }
+
+        if (!sortedTargets.isEmpty()) {
+            Target target = sortedTargets.get(0);
+            Point2D.Double positionTarget = target.position;
+            double r = (getTime() - target.time) * 3;
+
+            g.setColor(Color.YELLOW);
+            g.drawOval(
+                    (int) (positionTarget.x - r),
+                    (int) (positionTarget.y - r),
+                    (int) (2 * r),
+                    (int) (2 * r)
+            );
+        }
     }
 
-    @Override
-    public void onBulletMissed(BulletMissedEvent event) {
-    }
-
-    @Override
-    public void onBulletHit(BulletHitEvent event) {
+    private List<Target> sortTargetsByDistance() {
+        return new ArrayList<>(targets.values()).stream().filter(
+                target -> target.time + 10 > getTime()
+        ).sorted((a, b) -> {
+            double distanceA = a.position.distance(getX(), getY());
+            double distanceB = b.position.distance(getX(), getY());
+            return Double.compare(distanceA, distanceB);
+        }).collect(Collectors.toList());
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

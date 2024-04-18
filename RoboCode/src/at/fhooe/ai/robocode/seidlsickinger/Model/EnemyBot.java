@@ -1,7 +1,5 @@
 package at.fhooe.ai.robocode.seidlsickinger.Model;
 
-import java.util.ArrayList;
-
 public class EnemyBot {
     private String _name;
 
