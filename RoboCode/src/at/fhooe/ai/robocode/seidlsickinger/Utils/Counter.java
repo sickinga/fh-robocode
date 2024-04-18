@@ -1,7 +1,5 @@
 package at.fhooe.ai.robocode.seidlsickinger.Utils;
 
-import at.fhooe.ai.robocode.seidlsickinger.ICounterObserver;
-
 import java.util.ArrayList;
 import java.util.List;
 
