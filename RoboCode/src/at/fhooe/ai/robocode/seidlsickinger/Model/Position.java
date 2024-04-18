@@ -14,6 +14,7 @@ public class Position{
         _timeStamp = timeStamp;
     }
 
+    //GETTER
     public double getX(){
         return x;
     }
@@ -21,12 +22,7 @@ public class Position{
         return y;
     }
     public long getTimeStamp(){return _timeStamp; }
-
-    public Position substract(Position other){
-        if(other == null) throw new NullPointerException("other is null");
-        return new Position(x - other.x, y - other.y, System.currentTimeMillis());
-    }
-
+    //TO STRING
     @Override
     public String toString() {
         return String.format("(%.1f;%.1f;%d)", x, y,_timeStamp);
