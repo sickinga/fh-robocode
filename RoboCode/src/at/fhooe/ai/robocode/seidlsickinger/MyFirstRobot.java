@@ -119,6 +119,7 @@ public class MyFirstRobot extends AdvancedRobot {
 
     @Override
     public void onPaint(Graphics2D g) {
+        super.onPaint(g);
         g.setColor(Color.GREEN);
         g.drawLine(
                 (int) getX(),
