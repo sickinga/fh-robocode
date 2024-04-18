@@ -2,47 +2,84 @@ package at.fhooe.ai.robocode.seidlsickinger;
 
 import at.fhooe.ai.robocode.seidlsickinger.Model.EnemyBot;
 import at.fhooe.ai.robocode.seidlsickinger.Model.Position;
+import at.fhooe.ai.robocode.seidlsickinger.Model.Target;
 import at.fhooe.ai.robocode.seidlsickinger.Utils.AngleCalculator;
 import robocode.*;
+import robocode.util.Utils;
 
 import java.awt.*;
 import java.awt.geom.Point2D;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Random;
-import java.util.Set;
+import java.util.*;
+import java.util.List;
+import java.util.stream.Collectors;
 
 public class TrackingRobot extends AdvancedRobot {
+    final static double BULLET_POWER = 3;
     private HashMap<String,EnemyBot> botList = new HashMap<>();
     private double _direction = 1;
     private Random random = new Random();
     private long pos =0;
 
+    Map<String, Target> targets = new HashMap<>();
+    List<Target> sortedTargets = new ArrayList<>();
+
     @Override
     public void run() {
-        super.run();
         setTurnRadarRight(Double.POSITIVE_INFINITY);
-        moveToPosition(new Position(getBattleFieldWidth()/2, getBattleFieldHeight()/2));
-        /*long last =getTime();
-        while (true){
-            long diff = getTime() - last;
-            if(diff > 2){
-                System.out.println(getTime() + "- Fire");
-                Position position = getPosition();
-                EnemyBot enemyBot = getNextTarget();
-                if(enemyBot == null) continue;
-                Position nextPos = enemyBot.nextPosition(getTime());
-                double angleCorrection = getAngleGunCorrection(position,nextPos);
-                long bulletTime = getBulletTime(1,position,nextPos);
-                long angleTurnTime = (long) angleCorrection / 20;
-                nextPos = enemyBot.nextPosition(getTime() + bulletTime + angleTurnTime);
-                angleCorrection = getAngleGunCorrection(position,nextPos);
-                turnGunRight(angleCorrection);
-                fire(1);
-                last = getTime();
+        setAdjustRadarForGunTurn(true);
+
+        while (true) {
+            // scan battlefield
+            setTurnRadarRight(180);
+
+            Target target = null;
+
+            if (targets.size() > 1) {
+                sortedTargets = sortTargetsByDistance();
+                if (!sortedTargets.isEmpty()) {
+                    target = sortedTargets.getFirst();
+                }
+            } else if (sortedTargets.isEmpty() && !targets.isEmpty()) {
+                target = targets.values().stream().findFirst().orElse(null);
             }
-            doNothing();
-        }*/
+
+            if (target != null) {
+                double distanceToNextWall = Math.min(
+                        Math.min(getX(), getBattleFieldWidth() - getX()),
+                        Math.min(getY(), getBattleFieldHeight() - getY())
+                );
+
+                if (distanceToNextWall < 100 && distanceToNextWall < target.distance) {
+                    double angleToCenter = Math.atan2(getBattleFieldWidth() / 2 - getX(), getBattleFieldHeight() / 2 - getY());
+
+                    setTurnRightRadians(Utils.normalRelativeAngle(angleToCenter - getHeadingRadians()));
+                    setAhead(100);
+                } else {
+                    double absBearing = Math.atan2(target.position.x - getX(), target.position.y - getY());
+                    double turnRadius = absBearing + Math.PI / 2;
+
+                    turnRadius -= Math.max(0.5, (1 / target.distance) * 100);
+
+                    if (target.distance < 50) {
+                        double angleToTarget = absBearing - getGunHeadingRadians();
+
+                        setTurnGunRightRadians(Utils.normalRelativeAngle(angleToTarget));
+
+                        setFireBullet(BULLET_POWER);
+                        System.out.println("Shot!");
+                    }
+
+                    setTurnRightRadians(Utils.normalRelativeAngle(turnRadius - getHeadingRadians()));
+                    setMaxVelocity(400 / getTurnRemaining());
+                    setAhead(100);
+                }
+            } else {
+                System.out.println("Idling");
+                setTurnRight(90);
+                setAhead(100);
+            }
+            execute();
+        }
     }
     private EnemyBot getNextTarget(){
         if(botList.isEmpty()) return null;
@@ -69,12 +106,33 @@ public class TrackingRobot extends AdvancedRobot {
         super.onScannedRobot(event);
 
         String name = getCoreName(event.getName());
+        double distance = event.getDistance();
+        double absBearing = getHeadingRadians() + event.getBearingRadians();
+
         if(botList.containsKey(name) == false){
             botList.put(name,new EnemyBot(name));
         }
         EnemyBot bot = botList.get(name);
-        Position position = getEnemyPosition(event.getBearing(),event.getDistance());
+        Position position = getEnemyPosition(event.getBearing(), distance);
         bot.addPoint(position);
+
+        if (event.getEnergy() == 0) {
+            targets.remove(name);
+            return;
+        }
+
+        targets.put(event.getName(), new Target(
+                name,
+                new Point2D.Double(
+                        getX() + Math.sin(absBearing) * distance,
+                        getY() + Math.cos(absBearing) * distance
+                ),
+                event.getHeadingRadians(),
+                getTime(),
+                event.getEnergy(),
+                distance,
+                event.getVelocity()
+        ));
     }
 
     @Override
@@ -96,6 +154,20 @@ public class TrackingRobot extends AdvancedRobot {
                 int diff = (int)(getTime() - last.getTimeStamp());
                 g.drawOval((int)next.getX(),(int)next.getY(),diff,diff);
             }
+        }
+
+        if (!sortedTargets.isEmpty()) {
+            Target target = sortedTargets.get(0);
+            Point2D.Double positionTarget = target.position;
+            double r = (getTime() - target.time) * 3;
+
+            g.setColor(Color.YELLOW);
+            g.drawOval(
+                    (int) (positionTarget.x - r),
+                    (int) (positionTarget.y - r),
+                    (int) (2 * r),
+                    (int) (2 * r)
+            );
         }
     }
 
@@ -176,25 +248,24 @@ public class TrackingRobot extends AdvancedRobot {
     @Override
     public void onHitByBullet(HitByBulletEvent event) {
         System.out.println("onBulletHit");
-        moveCrazy();
     }
 
     @Override
     public void onHitRobot(HitRobotEvent event) {
-        _direction *=-1;
-        double distance = random.nextDouble(100);
-        distance = Math.max(50,distance);
-        distance = distance*_direction;
-        ahead(distance);
+        if (event.getBearing() > -90 && event.getBearing() < 90) {
+            back(100);
+        } else {
+            ahead(100);
+        }
     }
 
     @Override
     public void onHitWall(HitWallEvent event) {
-        _direction *= -1;
-        double distance = random.nextDouble(100);
-        distance = Math.max(50,distance);
-        distance = distance*_direction;
-        ahead(distance);
+        if (event.getBearing() > -90 && event.getBearing() < 90) {
+            back(100);
+        } else {
+            ahead(100);
+        }
     }
     private void moveCrazy(){
         System.out.println("moveCrazy");
@@ -209,5 +280,15 @@ public class TrackingRobot extends AdvancedRobot {
         distance = distance*_direction;
         System.out.println("Ahead "+distance);
         ahead(distance);
+    }
+
+    private List<Target> sortTargetsByDistance() {
+        return new ArrayList<>(targets.values()).stream().filter(
+                target -> target.time + 10 > getTime()
+        ).sorted((a, b) -> {
+            double distanceA = a.position.distance(getX(), getY());
+            double distanceB = b.position.distance(getX(), getY());
+            return Double.compare(distanceA, distanceB);
+        }).collect(Collectors.toList());
     }
 }

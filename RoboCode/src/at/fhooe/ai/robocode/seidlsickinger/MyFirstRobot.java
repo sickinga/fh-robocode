@@ -124,7 +124,6 @@ public class MyFirstRobot extends AdvancedRobot {
 
     public void onHitWall(HitWallEvent e) {
         if (e.getBearing() > -90 && e.getBearing() < 90) {
-
             back(100);
         } else {
             ahead(100);
@@ -170,7 +169,6 @@ public class MyFirstRobot extends AdvancedRobot {
             );
         }
 
-        List<Target> sortedTargets = sortTargetsByDistance();
         if (!sortedTargets.isEmpty()) {
             Target target = sortedTargets.get(0);
             Point2D.Double positionTarget = target.position;
