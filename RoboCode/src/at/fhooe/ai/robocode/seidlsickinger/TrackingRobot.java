@@ -71,7 +71,12 @@ public class TrackingRobot extends AdvancedRobot {
 
                     setTurnRightRadians(Utils.normalRelativeAngle(turnRadius - getHeadingRadians()));
                     setMaxVelocity(400 / getTurnRemaining());
-                    setAhead(100);
+
+                    if (target.distance < 100 && absBearing - getHeadingRadians() > Math.PI / 6) {
+                        setAhead(50);
+                    } else {
+                        setAhead(100);
+                    }
                 }
             } else {
                 System.out.println("Idling");
@@ -252,10 +257,8 @@ public class TrackingRobot extends AdvancedRobot {
 
     @Override
     public void onHitRobot(HitRobotEvent event) {
-        if (event.getBearing() > -90 && event.getBearing() < 90) {
+        if (event.getBearingRadians() > Math.PI / 2 || event.getBearingRadians() < -Math.PI / 2) {
             back(100);
-        } else {
-            ahead(100);
         }
     }
 
