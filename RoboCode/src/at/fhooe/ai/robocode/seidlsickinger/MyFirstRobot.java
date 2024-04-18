@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 public class MyFirstRobot extends AdvancedRobot {
 
@@ -38,6 +39,8 @@ public class MyFirstRobot extends AdvancedRobot {
     List<Target> sortedTargets = new ArrayList<>();
 
     public void run() {
+        setAdjustRadarForGunTurn(true);
+
         while (true) {
             // scan battlefield
             setTurnRadarRight(180);
@@ -71,16 +74,15 @@ public class MyFirstRobot extends AdvancedRobot {
                     turnRadius -= Math.max(0.5, (1 / target.distance) * 100);
 
                     if (target.distance < 50) {
-                        double angleToTarget = Math.atan2(target.position.x - getX(), target.position.y - getY()) - getGunHeadingRadians();
+                        double angleToTarget = absBearing - getGunHeadingRadians();
 
-                        turnGunRight(Utils.normalRelativeAngleDegrees(angleToTarget));
+                        setTurnGunRightRadians(Utils.normalRelativeAngle(angleToTarget));
 
-                        fireBullet(BULLET_POWER);
+                        setFireBullet(BULLET_POWER);
                         System.out.println("Shot!");
-                    } else {
-                        setTurnRightRadians(Utils.normalRelativeAngle(turnRadius - getHeadingRadians()));
                     }
 
+                    setTurnRightRadians(Utils.normalRelativeAngle(turnRadius - getHeadingRadians()));
                     setMaxVelocity(400 / getTurnRemaining());
                     setAhead(100);
                 }
@@ -130,8 +132,11 @@ public class MyFirstRobot extends AdvancedRobot {
     }
 
     public void onHitRobot(HitRobotEvent e) {
-        if (e.getBearing() > 45 || e.getBearing() < -45)
+        if (e.getBearing() > -90 && e.getBearing() < 90) {
             back(100);
+        } else {
+            ahead(100);
+        }
     }
 
     @Override
@@ -164,16 +169,31 @@ public class MyFirstRobot extends AdvancedRobot {
                     (int) (position.y + Math.cos(heading) * r)
             );
         }
+
+        List<Target> sortedTargets = sortTargetsByDistance();
+        if (!sortedTargets.isEmpty()) {
+            Target target = sortedTargets.get(0);
+            Point2D.Double positionTarget = target.position;
+            double r = (getTime() - target.time) * 3;
+
+            g.setColor(Color.YELLOW);
+            g.drawOval(
+                    (int) (positionTarget.x - r),
+                    (int) (positionTarget.y - r),
+                    (int) (2 * r),
+                    (int) (2 * r)
+            );
+        }
     }
 
     private List<Target> sortTargetsByDistance() {
-        List<Target> sortedTargets = new ArrayList<>(targets.values());
-        sortedTargets.sort((a, b) -> {
+        return new ArrayList<>(targets.values()).stream().filter(
+                target -> target.time + 10 > getTime()
+        ).sorted((a, b) -> {
             double distanceA = a.position.distance(getX(), getY());
             double distanceB = b.position.distance(getX(), getY());
             return Double.compare(distanceA, distanceB);
-        });
-        return sortedTargets;
+        }).collect(Collectors.toList());
     }
 }
 
