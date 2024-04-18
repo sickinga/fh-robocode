@@ -13,10 +13,9 @@ import java.util.Map;
 public class MyFirstRobot extends AdvancedRobot {
 
     final static double BULLET_POWER = 3;
-    final static double BULLET_DAMAGE = BULLET_POWER * 4;
-    final static double BULLET_SPEED = 20 - 3 * BULLET_POWER;
 
     private static class Target {
+        public String name;
         public Point2D.Double position;
         public double heading;
         public long time;
@@ -24,7 +23,8 @@ public class MyFirstRobot extends AdvancedRobot {
         public double distance;
         public double velocity;
 
-        public Target(Point2D.Double position, double heading, long time, double energy, double distance, double velocity) {
+        public Target(String name, Point2D.Double position, double heading, long time, double energy, double distance, double velocity) {
+            this.name = name;
             this.position = position;
             this.heading = heading;
             this.time = time;
@@ -38,18 +38,19 @@ public class MyFirstRobot extends AdvancedRobot {
     List<Target> sortedTargets = new ArrayList<>();
 
     public void run() {
-
         while (true) {
             // scan battlefield
             setTurnRadarRight(180);
 
             Target target = null;
 
-            if (targets.size() > 1 || sortedTargets.size() == 0) {
+            if (targets.size() > 1) {
                 sortedTargets = sortTargetsByDistance();
-                if (sortedTargets.size() > 0) {
-                    target = sortedTargets.get(0);
+                if (!sortedTargets.isEmpty()) {
+                    target = sortedTargets.getFirst();
                 }
+            } else if (sortedTargets.isEmpty() && !targets.isEmpty()) {
+                target = targets.values().stream().findFirst().orElse(null);
             }
 
             if (target != null) {
@@ -59,20 +60,32 @@ public class MyFirstRobot extends AdvancedRobot {
                 );
 
                 if (distanceToNextWall < 100 && distanceToNextWall < target.distance) {
-                    // slow down
-                    setMaxVelocity(100);
+                    double angleToCenter = Math.atan2(getBattleFieldWidth() / 2 - getX(), getBattleFieldHeight() / 2 - getY());
+
+                    setTurnRightRadians(Utils.normalRelativeAngle(angleToCenter - getHeadingRadians()));
+                    setAhead(100);
                 } else {
                     double absBearing = Math.atan2(target.position.x - getX(), target.position.y - getY());
                     double turnRadius = absBearing + Math.PI / 2;
 
                     turnRadius -= Math.max(0.5, (1 / target.distance) * 100);
 
-                    setTurnRightRadians(Utils.normalRelativeAngle(turnRadius - getHeadingRadians()));
+                    if (target.distance < 50) {
+                        double angleToTarget = Math.atan2(target.position.x - getX(), target.position.y - getY()) - getGunHeadingRadians();
+
+                        turnGunRight(Utils.normalRelativeAngleDegrees(angleToTarget));
+
+                        fireBullet(BULLET_POWER);
+                        System.out.println("Shot!");
+                    } else {
+                        setTurnRightRadians(Utils.normalRelativeAngle(turnRadius - getHeadingRadians()));
+                    }
 
                     setMaxVelocity(400 / getTurnRemaining());
                     setAhead(100);
                 }
             } else {
+                System.out.println("Idling");
                 setTurnRight(90);
                 setAhead(100);
             }
@@ -90,6 +103,7 @@ public class MyFirstRobot extends AdvancedRobot {
         }
 
         targets.put(e.getName(), new Target(
+                e.getName(),
                 new Point2D.Double(
                         getX() + Math.sin(absBearing) * distance,
                         getY() + Math.cos(absBearing) * distance
@@ -117,12 +131,7 @@ public class MyFirstRobot extends AdvancedRobot {
 
     public void onHitRobot(HitRobotEvent e) {
         if (e.getBearing() > 45 || e.getBearing() < -45)
-            ahead(100);
-        else {
-            double gunAngle = e.getBearing() + getHeading() - getGunHeading();
-            turnGunRight(gunAngle);
-            fireBullet(BULLET_POWER);
-        }
+            back(100);
     }
 
     @Override
