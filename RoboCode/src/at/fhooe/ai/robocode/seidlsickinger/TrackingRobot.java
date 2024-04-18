@@ -81,6 +81,7 @@ public class TrackingRobot extends AdvancedRobot {
     public void onPaint(Graphics2D g) {
         super.onPaint(g);
         var bots = botList.entrySet();
+        g.setStroke(new BasicStroke(2));
         g.setPaint(Color.red);
         Position current = getPosition();
         for (Map.Entry<String,EnemyBot> bot : bots){
@@ -94,7 +95,7 @@ public class TrackingRobot extends AdvancedRobot {
                 long angleTime = getTurnAngleTime(current,next);
                 next = b.nextPosition(getTime() + bulletTime + angleTime);
                 int diff = (int)(getTime() - last.getTimeStamp());
-                g.drawOval((int)next.getX(),(int)next.getY(),diff,diff);
+                g.drawOval((int)next.getX(),(int)next.getY(),diff*10,diff*10);
             }
         }
     }
