@@ -21,11 +21,9 @@ public class MyFirstRobot extends AdvancedRobot {
 
     public void run() {
         setAdjustRadarForGunTurn(true);
+        setTurnRadarRight(Double.POSITIVE_INFINITY);
 
         while (true) {
-            // scan battlefield
-            setTurnRadarRight(180);
-
             Target target = null;
 
             if (targets.size() > 1) {
