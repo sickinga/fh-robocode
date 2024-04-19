@@ -176,10 +176,10 @@ public class TrackingRobot extends AdvancedRobot {
                 double width = diff * 5;
                 drawCircle(next.getX(),next.getY(),width,g);
 
-                g.setColor(Color.YELLOW);
+                /*g.setColor(Color.YELLOW);
                 drawLine(last,next,g);
                 fillCircle(last.getX(),last.getY(),5,g);
-                fillCircle(next.getX(),next.getY(),5,g);
+                fillCircle(next.getX(),next.getY(),5,g);*/
             }
         }
     }
