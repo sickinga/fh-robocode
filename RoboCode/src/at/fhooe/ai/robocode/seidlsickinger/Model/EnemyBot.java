@@ -41,6 +41,18 @@ public class EnemyBot {
         if(diff > 10) return false;
         return true;
     }
+    public boolean hasEnergyDroped(){
+        if(last == null) return false;
+        if(last2 == null) return false;
+        double energyDiff = getEnergyDropped();
+        return energyDiff < 3.01 && energyDiff > 0.01;
+    }
+    public double getEnergyDropped(){
+        if(last == null) return 0;
+        if(last2 == null) return 0;
+        double energyDiff = last2.get_energy() - last.get_energy();
+        return energyDiff;
+    }
 
     @Override
     public String toString() {
