@@ -1,9 +1,11 @@
 package at.fhooe.ai.robocode.seidlsickinger;
 
 import at.fhooe.ai.robocode.seidlsickinger.Model.EnemyBot;
+import at.fhooe.ai.robocode.seidlsickinger.Model.EnemyWave;
 import at.fhooe.ai.robocode.seidlsickinger.Model.Position;
 import at.fhooe.ai.robocode.seidlsickinger.Model.Target;
 import at.fhooe.ai.robocode.seidlsickinger.Utils.AngleCalculator;
+import at.fhooe.ai.robocode.seidlsickinger.Utils.BulletUtils;
 import robocode.*;
 import robocode.util.Utils;
 
@@ -16,9 +18,7 @@ import java.util.stream.Collectors;
 public class TrackingRobot extends AdvancedRobot {
     final static double BULLET_POWER = 3;
     private HashMap<String,EnemyBot> botList = new HashMap<>();
-    private double _direction = 1;
-    private Random random = new Random();
-    private long pos =0;
+    private List<EnemyWave> enemyWaveList = new ArrayList<>();
 
     Map<String, Target> targets = new HashMap<>();
     List<Target> sortedTargets = new ArrayList<>();
@@ -86,40 +86,37 @@ public class TrackingRobot extends AdvancedRobot {
             execute();
         }
     }
-    private EnemyBot getNextTarget(){
-        if(botList.isEmpty()) return null;
-        EnemyBot target = null;
-        double targetDistance = Double.POSITIVE_INFINITY;
-        long time = getTime();
-        for(Map.Entry<String,EnemyBot> botEntry: botList.entrySet()){
-            EnemyBot bot = botEntry.getValue();
-            if(bot.isAlive(getTime()) == false) continue;
-            if(target == null) target = bot;
-            else {
-                double distance = getDistance(bot.nextPosition(time));
-                if(distance < targetDistance){
-                    target = bot;
-                    targetDistance = distance;
-                }
-            }
-        }
-        return target;
-    }
 
     @Override
     public void onScannedRobot(ScannedRobotEvent event) {
         super.onScannedRobot(event);
 
+        long time = getTime();
         String name = getCoreName(event.getName());
         double distance = event.getDistance();
         double absBearing = getHeadingRadians() + event.getBearingRadians();
+        double energy = event.getEnergy();
+        Point2D currentPosition = new Point2D.Double(getX(), getY());
+        Point2D.Double _myLocation = new Point2D.Double(getX(),getY());
 
-        if(botList.containsKey(name) == false){
+
+
+        if(!botList.containsKey(name)){
             botList.put(name,new EnemyBot(name));
         }
         EnemyBot bot = botList.get(name);
-        Position position = getEnemyPosition(event.getBearing(), distance);
+        Point2D _enemyLocation = project(_myLocation, absBearing, event.getDistance());
+        Position position = Position.fromPoint2D(_enemyLocation, time,event.getEnergy());
+        //Position position = getEnemyPosition(event.getBearing(), distance, energy);
         bot.addPoint(position);
+        if(bot.hasEnergyDroped()){
+            EnemyWave enemyWave = new EnemyWave();
+            double energyDroped = bot.getEnergyDropped();
+            enemyWave.fireLocation = bot.getLast().toPoint2D();
+            enemyWave.bulletVelocity = BulletUtils.getVelocity(energyDroped);
+            enemyWave.fireTime = time;
+            enemyWaveList.add(enemyWave);
+        }
 
         if (event.getEnergy() == 0) {
             targets.remove(name);
@@ -143,24 +140,10 @@ public class TrackingRobot extends AdvancedRobot {
     @Override
     public void onPaint(Graphics2D g) {
         super.onPaint(g);
-        var bots = botList.entrySet();
-        g.setPaint(Color.red);
-        Position current = getPosition();
-        for (Map.Entry<String,EnemyBot> bot : bots){
-            EnemyBot b = bot.getValue();
-            Position last = b.getLast();
-            if(b.hasNextPosition()){
-                if(b.isAlive(getTime())) g.setPaint(Color.red);
-                else g.setPaint(Color.gray);
-                Position next = b.nextPosition(getTime());
-                long bulletTime = getBulletTime(1,current,next);
-                long angleTime = getTurnAngleTime(current,next);
-                next = b.nextPosition(getTime() + bulletTime + angleTime);
-                int diff = (int)(getTime() - last.getTimeStamp());
-                g.drawOval((int)next.getX(),(int)next.getY(),diff,diff);
-            }
-        }
 
+        g.setPaint(Color.red);
+        drawEnemyPositions(g);
+        drawEnemyWaves(g);
         if (!sortedTargets.isEmpty()) {
             Target target = sortedTargets.get(0);
             Point2D.Double positionTarget = target.position;
@@ -175,8 +158,70 @@ public class TrackingRobot extends AdvancedRobot {
             );
         }
     }
+    private void drawEnemyPositions(Graphics2D g){
+        g.setStroke(new BasicStroke(1));
+        Position current = getPosition();
+        var bots = botList.entrySet();
+        for (Map.Entry<String,EnemyBot> bot : bots){
+            EnemyBot b = bot.getValue();
+            Position last = b.getLast();
+            if(b.hasNextPosition()){
+                if(b.isAlive(getTime())) g.setPaint(Color.red);
+                g.setStroke(new BasicStroke(2));
+                Position next = b.nextPosition(getTime());
+                long bulletTime = getBulletTime(1,current,next);
+                long angleTime = getTurnAngleTime(current,next);
+                next = b.nextPosition(getTime() + bulletTime + angleTime);
+                int diff = (int)(getTime() - last.getTimeStamp());
+                double width = diff * 5;
+                drawCircle(next.getX(),next.getY(),width,g);
 
-    private Position getEnemyPosition(double bearing, double distance){
+                g.setColor(Color.YELLOW);
+                drawLine(last,next,g);
+                fillCircle(last.getX(),last.getY(),5,g);
+                fillCircle(next.getX(),next.getY(),5,g);
+            }
+        }
+    }
+    private void drawEnemyWaves(Graphics2D g){
+        g.setStroke(new BasicStroke(1));
+        long time = getTime();
+        for(int i=0;i<enemyWaveList.size();i++) {
+            EnemyWave enemyWave = enemyWaveList.get(i);
+            g.setColor(Color.LIGHT_GRAY);
+            g.setBackground(Color.LIGHT_GRAY);
+            long diff = time - enemyWave.getFireTime();
+            double distance = Point2D.distance(getX(), getY(), enemyWave.fireLocation.getX(), enemyWave.fireLocation.getY()) + enemyWave.bulletVelocity * 2;
+            double travelDistance = diff * enemyWave.bulletVelocity;
+            double remainingDistance = travelDistance - distance;
+            if (remainingDistance > (8 * enemyWave.bulletVelocity)) {
+                enemyWaveList.remove(enemyWave);
+                continue;
+            }
+            Point2D firePos = enemyWave.getFireLocation();
+            double width = travelDistance * 2.0;
+            g.setColor(Color.gray);
+            drawCircle(firePos.getX(),firePos.getY(),width,g);
+
+        }
+    }
+    private void drawCircle(double x, double y, double width, Graphics2D g){
+        double offset = width / 2;
+        x = x - offset;
+        y = y - offset;
+        g.drawOval((int)x,(int)y,(int)width,(int)width);
+    }
+    private void fillCircle(double x, double y, double width, Graphics2D g){
+        double offset = width / 2;
+        x = x - offset;
+        y = y - offset;
+        g.fillOval((int)x,(int)y,(int)width,(int)width);
+    }
+    private void drawLine(Position p1,Position p2, Graphics2D g){
+        g.drawLine((int)p1.getX(),(int)p1.getY(),(int)p2.getX(),(int)p2.getY());
+    }
+
+    private Position getEnemyPosition(double bearing, double distance, double energy){
         double angleToEnemy = bearing;
 
         // Calculate the angle to the scanned robot
@@ -185,7 +230,12 @@ public class TrackingRobot extends AdvancedRobot {
         // Calculate the coordinates of the robot
         double enemyX = (getX() + Math.sin(angle) * distance);
         double enemyY = (getY() + Math.cos(angle) * distance);
-        return new Position(enemyX,enemyY,getTime());
+        return new Position(enemyX,enemyY,getTime(),energy);
+    }
+    public static Point2D.Double project(Point2D.Double sourceLocation,
+                                         double angle, double length) {
+        return new Point2D.Double(sourceLocation.x + Math.sin(angle) * length,
+                sourceLocation.y + Math.cos(angle) * length);
     }
     private void moveToPosition(Position p){
         moveToPositionAngle(p);
@@ -269,20 +319,6 @@ public class TrackingRobot extends AdvancedRobot {
         } else {
             ahead(100);
         }
-    }
-    private void moveCrazy(){
-        System.out.println("moveCrazy");
-        boolean shouldTurn = random.nextInt(100) > 50;
-        if(shouldTurn){
-            double angle = random.nextDouble(45);
-            System.out.println("Turn "+angle);
-            turnRight(angle);
-        }
-        double distance = random.nextDouble(100);
-        distance = Math.max(50,distance);
-        distance = distance*_direction;
-        System.out.println("Ahead "+distance);
-        ahead(distance);
     }
 
     private List<Target> sortTargetsByDistance() {
